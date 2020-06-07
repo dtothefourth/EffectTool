@@ -1,0 +1,19 @@
+﻿BG Gradient GUI:
+	Debug feature in Single tab fixing.
+
+Brightness GUI:
+	Tables tab
+
+BitmapEffects:
+	Make overlapping images faster.
+	Make adding images faster.
+	Make MoveLine loop over Up/Down movement.
+	
+HDMA:
+	HDMAException
+
+ChooseChannel:
+	Make it closable without triggering the code (null returnen)
+
+Parallax:
+	Auto scroll instead of fixed scroll adder.

@@ -1,0 +1,72 @@
+<p4plus2> assume color1 to be 315F
+<p4plus2> assume color2 to be 77EC
+<Tahixham> ohh
+<p4plus2> !ar math (($315F & $7BDE) >> 1) + (($77EC & $7BDE) >> 1) 
+
+<p4plus2> !ar math ($6280 + $77EC - (($6280 ^ $77EC) & $0421)) >> 1
+
+-----------------
+
+run code in SA-1
+<VitorVilela> store pointer to $3180-$3182
+<VitorVilela> JSR to $1E80
+
+-----------------
+
+parallex:
+	LDA #$7F
+	STA $4334
+	
+	REP #$20
+	LDA #$0F02
+	STA $4330
+	LDA #$8600
+	STA $4332
+	STZ $00
+	
+	TAX
+	TAY
+.loop	LDA scanlines,y
+	CLC
+	ADC $00
+	STA $00
+	SBC $20
+	BMI .next
+	
+	CMP scanlines,y
+	BCC +
+	LDA scanlines,y
++	SEP #$20
+	STA $7F8600,x
+	
+	LDA $1E
+	STA $211B
+	LDA $1F
+	STA $211B
+	LDA speeds,y
+	STA $211C
+	
+	REP #$20
+	LDA $2134
+	LSR #4
+	STA $7F8601,x
+	INX #3
+.next	INY #2
+	CPY.b #speeds-scanlines+2
+	BNE .loop
+	SEP #$20
+
+	LDA #$08
+	TSB $0D9F
+	RTS
+	
+scanlines:
+	dw $0030,$0030,$0030,$0030,$0030,$0030,$0030,$0030
+	dw $0030
+speeds:
+	dw $0010,$0018,$0020,$0028,$0030,$0038,$0040,$0048
+	dw $0050
+
+---------------------------------------
+
+STZ $2121 LDA #$0F STA $2122 STZ $2122

@@ -1,0 +1,10 @@
+2.0.1
+-Added check for .dll before launch, abord if not present
+-Added check for "Mulitlayer" folder and warning if not present
+-Replaced $1462 with $1A (for all layers x/y)
+-Removed Color Math using $0D9D/$0D9E
+-Fixed second LDY in wave coude that should have been an LDX
+-Replaces INC:INC:INC with a +3 in parallax code
+
+2.1.0
+-Added screenshot button (for saving images)

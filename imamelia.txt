@@ -1,0 +1,996 @@
+
+Paste.ee
+
+    Home
+    About
+    Wiki
+    Contact
+
+    Not logged in
+
+Paste Language: Plain Text
+Submitted on July 24, 2015
+
+Copy to Clipboard - Download - View Raw - Embed (?) - Report
+
+    !ColorHDMAAddr = $7F69FE
+    !ParallaxL2HDMAAddr = $7F75D8
+    !ParallaxL3HDMAAddr = $7F7AEC
+    !BrightnessHDMAAddr = $7F????
+     
+    ; example codes from Peach's Quest:
+    levelinit3:
+    	LDA #$00
+    	JMP ScrollColorGradientInitRt
+    levelinit6:
+    	LDA #$01
+    	JMP ScrollColorGradientInitRt
+    levelinit9:
+    	LDA #$00
+    	JSR ScrollParallaxL2InitRt
+    levelinitB:
+    	LDA #$02
+    	JMP ScrollColorGradientInitRt
+    level3:
+    	JMP ScrollColorGradientMainRt
+    level9:
+    	REP #$20
+    	LDA $1A
+    	LSR
+    	STA !RAM_ParallaxRatesL2+2
+    	LSR
+    	STA !RAM_ParallaxRatesL2
+    	SEP #$20
+    	JSR ScrollParallaxL2MainRt
+    levelB:
+    	JMP ScrollColorGradientMainRt
+    level63:
+    	LDA #$01
+    	JMP ScrollColorGradientMainRt
+     
+    ;------------------------------------------------
+    ; HDMA background gradient that scrolls with the background
+    ;------------------------------------------------
+     
+    ; *TODO*:
+    ; - standardize which blocks of RAM are used for which types of HDMA
+    ; - make the tables shorter by using continuous mode instead?
+     
+    ; 0x1B1 scanlines * 2 = 0x362, * 3 = 0x513
+    ; color gradient: 0x514 + 0x363 bytes
+    ; brightness gradient: 0x363 bytes
+    ; parallax: 0x514 bytes
+    ; 1 color + 1 brightness + 2 parallax = 0x1602 or 0x1640 bytes
+    ; color gradient: $7F7770, $7F7C90 (or $7F7789, $7F7C9D)
+    ; parallax: $7F7250?
+    ; brightness gradient: $7F7090? or $7F7400?
+    ; or...
+    ; color: $7F7000, $7F7520
+    ; parallax: $7F7890
+    ; brightness: $7F7890
+    ; or...
+    ; color: $7F6F16, $7F7429
+    ; parallax: $7F778B
+    ; brightness: $7F7C9E
+    ; or...
+    ; $7F7250-$7F7FFF used for all of them
+    ; color $7F7250-776F, $7F7770-7A9F; parallax $7F7AE0-7FFF
+    ; color $7F7250-776F, $7F7770-7A9F; brightness $7F7AE0-7E4F
+    ; parallax $7F7250-776F; brightness $7F7770-7A9F or brightness $7F7250-$74BF; parallax $7F7AE0-7FFF
+    ; color $7F6D30-724F, $7F7250-754F; L2 parallax $7F75C0-7ADF; L3 parallax $7F7AE0-7FFF
+    ; brightness ; L2 parallax ; L3 parallax ; color $7F7770-7C8F, $7F7C90-7FFF
+    ; color $7F69C0, $7F6EE0; brightness $7F7250; L2 parallax $7F75C0; L3 parallax $7F7AE0 (note: $7F6ED4-DF, $7F7243-4F, $7F75B3-BF, $7F7AD4-DF, and $7F7FF4-FF will be unused)
+    ; color $7F69FE, $7F6F12; brightness $7F7275; L2 parallax $7F75D8; L3 parallax $7F7AEC
+    ; old addresses: B260 and B830
+    ; old addresses 2: 7250, 7770, 7AE0
+     
+    ; put in levelinit
+    ; Input: HDMA pattern number
+    ScrollColorGradientInitRt:
+    ; set up pointers:
+    ; ($02), ($04), ($06), and ($08) point to, respectively, the first, second, third, and fourth bytes corresponding to the scanline and color data for the current scanline group
+    ; [$0A] and [$0D] point to, respectively, the starting address of the HDMA data table and the starting address plus 0x514
+    	REP #$30
+    	AND #$00FF
+    	ASL
+    	TAX
+    	LDA ScrollColorGradientTbl,x
+    	STA $02
+    	INC
+    	STA $04
+    	INC
+    	STA $06
+    	INC
+    	STA $08
+    	LDA.w #!ColorHDMAAddr
+    	STA $0A
+    	LDA.w #!ColorHDMAAddr+$0514
+    	STA $0D
+    	SEP #$20
+    	LDA.b #!ColorHDMAAddr>>16
+    	STA $0C
+    	STA $0F
+    .Loop1
+    ; if the scanline count is 0, it's the end of the HDMA data
+    	LDA ($02)
+    	BEQ .End
+    	STA $00
+    .Loop2
+    ; scanline counts are always 1
+    	LDA #$01
+    	STA [$0A]
+    	STA [$0D]
+    ; store the color data: red and green into the first table, blue into the second
+    	LDY #$0001
+    	LDA ($04)
+    	STA [$0A],y
+    	LDA ($08)
+    	STA [$0D],y
+    	INY
+    	LDA ($06)
+    	STA [$0A],y
+    	REP #$20
+    	INC $0A
+    	INC $0A
+    	INC $0A
+    	INC $0D
+    	INC $0D
+    	SEP #$20
+    ; repeat for as many scanlines are in this group
+    	DEC $00
+    	BNE .Loop2
+    	REP #$20
+    ; add 4 to the pointers because there are 4 bytes per scanline group
+    	LDA $02
+    	CLC
+    	ADC #$0004
+    	STA $02
+    	INC
+    	STA $04
+    	INC
+    	STA $06
+    	INC
+    	STA $08
+    	SEP #$20
+    	BRA .Loop1
+    .End
+    	SEP #$30
+    ; this code should directly follow the above, and it should also be called in
+    ; the level main code - input should not be necessary
+    ScrollColorGradientMainRt:
+    	REP #$20
+    ; HDMA settings
+    	LDA #$3202
+    	STA $4330
+    	LDA #$3200
+    	STA $4340
+    ; set the starting point depending on the current Layer 2 position as well as the highest point it can go
+    	LDA $1414
+    	ASL
+    	TAY
+    	LDA $20
+    	SEC
+    	SBC TopL2YPos,y
+    	STA $00
+    	ASL
+    	CLC
+    	ADC $00
+    	CLC
+    	ADC.w #!ColorHDMAAddr
+    	STA $4332
+    	LDA $00
+    	ASL
+    	CLC
+    	ADC.w #!ColorHDMAAddr+$0514
+    	STA $4342
+    	LDY.b #!ColorHDMAAddr>>16
+    	STY $4334
+    	STY $4344
+    	SEP #$20
+    	LDA #$18
+    	TSB $0D9F
+    	RTS
+     
+    ;------------------------------------------------
+    ; parallax HDMA that scrolls with the background
+    ;------------------------------------------------
+     
+    ; most of this is the same as the color gradient,
+    ; except that we don't need as many pointers
+    ScrollParallaxL2InitRt:
+    	REP #$30
+    	AND #$00FF
+    	ASL
+    	TAX
+    	LDA ScrollParallaxTblL2,x
+    	STA $02
+    	INC
+    	STA $04
+    	LDA.w #!ParallaxL2HDMAAddr
+    	STA $0A
+    	SEP #$20
+    	LDA.b #!ParallaxL2HDMAAddr>>16
+    	STA $0C
+    .Loop1
+    	LDA ($02)
+    	BEQ .End
+    	STA $00
+    .Loop2
+    	LDA #$01
+    	STA [$0A]
+    	LDY #$0001
+    	REP #$20
+    	LDA ($04)
+    	AND #$00FF
+    	ASL
+    	CLC
+    	ADC.w #!RAM_ParallaxRatesL2
+    	STA [$0A],y
+    	INC $0A
+    	INC $0A
+    	INC $0A
+    	SEP #$20
+    	DEC $00
+    	BNE .Loop2
+    	REP #$20
+    	LDA $02
+    	INC : INC
+    	STA $02
+    	INC
+    	STA $04
+    	SEP #$20
+    	BRA .Loop1
+    .End
+    	SEP #$30
+    ; note here that before calling this in levelmain,
+    ; we must set !RAM_ParallaxRatesL2 to the proper value(s);
+    ; the RAM address uses twice as many bytes as there are scroll rates
+    ScrollParallaxL2MainRt:
+    	REP #$20
+    	LDA #$0F42
+    	STA $4350
+    	LDA $1414
+    	AND #$00FF
+    	ASL
+    	TAY
+    	LDA $20
+    	SEC
+    	SBC TopL2YPos,y
+    	STA $00
+    	ASL
+    	CLC
+    	ADC $00
+    	CLC
+    	ADC.w #!ParallaxL2HDMAAddr
+    	STA $4352
+    	LDY.b #!ParallaxL2HDMAAddr>>16
+    	STY $4354
+    	STY $4357
+    	SEP #$20
+    	LDA #$20
+    	TSB $0D9F
+    	RTS
+     
+    ; I haven't actually tried using parallax on Layer 3 yet...
+    ScrollParallaxL3InitRt:
+    	REP #$30
+    	AND #$00FF
+    	ASL
+    	TAX
+    	LDA ScrollParallaxTblL3,x
+    	STA $02
+    	INC
+    	STA $04
+    	LDA.w #!ParallaxL3HDMAAddr
+    	STA $0A
+    	SEP #$20
+    	LDA.b #!ParallaxL3HDMAAddr>>16
+    	STA $0C
+    .Loop1
+    	LDA ($02)
+    	BEQ .End
+    	STA $00
+    .Loop2
+    	LDA #$01
+    	STA [$0A]
+    	LDY #$0001
+    	REP #$20
+    	LDA ($04)
+    	AND #$00FF
+    	ASL
+    	CLC
+    	ADC.w #!RAM_ParallaxRatesL3
+    	STA [$0A],y
+    	INC $0A
+    	INC $0A
+    	INC $0A
+    	SEP #$20
+    	DEC $00
+    	BNE .Loop2
+    	REP #$20
+    	LDA $02
+    	INC : INC
+    	STA $02
+    	INC
+    	STA $04
+    	SEP #$20
+    	BRA .Loop1
+    .End
+    	SEP #$30
+    ScrollParallaxL3MainRt:
+    	REP #$20
+    	LDA #$1142
+    	STA $4350
+    ; TODO: figure out just what values I actually need here (thanks to $145E, do I even need a table?)
+    	LDA $145F
+    	AND #$00F0
+    	LSR : LSR : LSR
+    	TAY
+    	LDA $24
+    	SEC
+    ;	SBC TopL3YPos,y
+    	STA $00
+    	ASL
+    	CLC
+    	ADC $00
+    	CLC
+    	ADC.w #!ParallaxL3HDMAAddr
+    	STA $4352
+    	LDY.b #!ParallaxL3HDMAAddr>>16
+    	STY $4354
+    	STY $4357
+    	SEP #$20
+    	LDA #$20
+    	TSB $0D9F
+    	RTS
+     
+    ;------------------------------------------------
+    ; HDMA tables
+    ;------------------------------------------------
+     
+    ; total scanline count: 0x1B1 - TopL2YPos or TopL3YPos
+     
+    TopL2YPos:
+    	dw $00C0,$0000,$0060,$00A8
+    ;TopL3YPos:
+    ;	dw $00C0,$0000,$0060,$5555,$00A8,$5555,$5555,$5555
+    ;	dw $5555,$5555,$5555,$5555,$5555,$5555,$5555,$5555
+     
+    ; pointers to color gradient data
+    ScrollColorGradientTbl:
+    	dw .00,.01,.02
+     
+    ; scanline count, red value, green value, blue value
+    .00
+    	db $0C,$2D,$54,$9B
+    	db $04,$2D,$55,$9B
+    	db $12,$2E,$55,$9B
+    	db $08,$2E,$56,$9B
+    	db $0B,$2E,$56,$9C
+    	db $02,$2F,$56,$9C
+    	db $15,$2F,$57,$9C
+    	db $0F,$2F,$58,$9C
+    	db $07,$30,$58,$9C
+    	db $11,$30,$59,$9C
+    	db $04,$30,$59,$9D
+    	db $09,$30,$5A,$9D
+    	db $0D,$31,$5A,$9D
+    	db $15,$31,$5B,$9D
+    	db $04,$31,$5C,$9D
+    	db $11,$32,$5C,$9D
+    	db $04,$32,$5D,$9D
+    	db $19,$32,$5D,$9E
+    	db $04,$32,$5D,$9D
+    	db $03,$32,$5C,$9D
+    	db $0B,$31,$5C,$9D
+    	db $05,$31,$5B,$9D
+    	db $09,$30,$5B,$9D
+    	db $06,$30,$5A,$9D
+    	db $07,$2F,$5A,$9C
+    	db $09,$2F,$59,$9C
+    	db $05,$2E,$59,$9C
+    	db $0A,$2E,$58,$9C
+    	db $03,$2D,$58,$9C
+    	db $04,$2D,$57,$9C
+    	db $09,$2D,$57,$9B
+    	db $01,$2C,$57,$9B
+    	db $0E,$2C,$56,$9B
+    	db $01,$2C,$55,$9B
+    	db $0C,$2B,$55,$9B
+    	db $03,$2B,$54,$9A
+    	db $0B,$2A,$54,$9A
+    	db $05,$2A,$53,$9A
+    	db $08,$29,$53,$9A
+    	db $07,$29,$52,$9A
+    	db $04,$28,$52,$9A
+    	db $03,$28,$52,$99
+    	db $09,$28,$51,$99
+    	db $05,$27,$51,$99
+    	db $0A,$27,$50,$99
+    	db $03,$26,$50,$99
+    	db $08,$26,$4F,$99
+    	db $05,$26,$4F,$98
+    	db $01,$25,$4F,$98
+    	db $0E,$25,$4E,$98
+    	db $01,$25,$4D,$98
+    	db $0A,$24,$4D,$98
+    	db $00
+     
+    .01
+    	db $33,$38,$5F,$9C
+    	db $03,$38,$5E,$9C
+    	db $03,$37,$5E,$9C
+    	db $02,$37,$5E,$9B
+    	db $04,$37,$5D,$9B
+    	db $04,$36,$5D,$9B
+    	db $04,$36,$5C,$9B
+    	db $01,$36,$5C,$9A
+    	db $04,$35,$5C,$9A
+    	db $05,$35,$5B,$9A
+    	db $03,$34,$5B,$9A
+    	db $06,$34,$5A,$99
+    	db $02,$33,$5A,$99
+    	db $06,$33,$59,$99
+    	db $01,$33,$59,$98
+    	db $01,$32,$59,$98
+    	db $08,$32,$58,$98
+    	db $01,$31,$58,$98
+    	db $03,$31,$57,$98
+    	db $05,$31,$57,$97
+    	db $08,$30,$56,$97
+    	db $01,$30,$55,$96
+    	db $08,$2F,$55,$96
+    	db $01,$2F,$54,$96
+    	db $04,$2E,$54,$96
+    	db $03,$2E,$54,$95
+    	db $02,$2E,$53,$95
+    	db $06,$2D,$53,$95
+    	db $02,$2D,$52,$95
+    	db $01,$2D,$52,$94
+    	db $05,$2C,$52,$94
+    	db $04,$2C,$51,$94
+    	db $80,$2B,$51,$94
+    	db $80,$2B,$51,$94
+    	db $0E,$2B,$51,$94
+    	db $00
+     
+    .02
+    	db $1A,$30,$57,$9D
+    	db $05,$30,$57,$9E
+    	db $03,$30,$58,$9E
+    	db $08,$31,$58,$9E
+    	db $03,$31,$59,$9E
+    	db $07,$32,$59,$9E
+    	db $04,$32,$5A,$9E
+    	db $06,$33,$5A,$9E
+    	db $06,$33,$5B,$9E
+    	db $05,$34,$5B,$9E
+    	db $06,$34,$5C,$9E
+    	db $02,$35,$5C,$9E
+    	db $02,$35,$5C,$9F
+    	db $07,$35,$5D,$9F
+    	db $03,$36,$5D,$9F
+    	db $08,$36,$5E,$9F
+    	db $02,$37,$5E,$9F
+    	db $0E,$37,$5F,$9F
+    	db $17,$38,$5F,$9F
+    	db $16,$39,$5F,$9F
+    	db $17,$3A,$5F,$9F
+    	db $16,$3B,$5F,$9F
+    	db $17,$3C,$5F,$9F
+    	db $17,$3D,$5F,$9F
+    	db $16,$3E,$5F,$9F
+    	db $80,$3F,$5F,$9F
+    	db $1D,$3F,$5F,$9F
+    	db $00
+     
+    ; pointers to parallax data
+    ScrollParallaxTblL2:
+    	dw .00
+     
+    ; scanline count, index to scroll rate
+    .00
+    	db $80,$00
+    	db $50,$00
+    	db $80,$01
+    	db $01,$01
+    	db $00
+     
+    ScrollParallaxTblL3:
+    	dw .00
+     
+    .00
+    	db $00
+
+!ColorHDMAAddr = $7F69FE
+!ParallaxL2HDMAAddr = $7F75D8
+!ParallaxL3HDMAAddr = $7F7AEC
+!BrightnessHDMAAddr = $7F????
+
+; example codes from Peach's Quest:
+levelinit3:
+	LDA #$00
+	JMP ScrollColorGradientInitRt
+levelinit6:
+	LDA #$01
+	JMP ScrollColorGradientInitRt
+levelinit9:
+	LDA #$00
+	JSR ScrollParallaxL2InitRt
+levelinitB:
+	LDA #$02
+	JMP ScrollColorGradientInitRt
+level3:
+	JMP ScrollColorGradientMainRt
+level9:
+	REP #$20
+	LDA $1A
+	LSR
+	STA !RAM_ParallaxRatesL2+2
+	LSR
+	STA !RAM_ParallaxRatesL2
+	SEP #$20
+	JSR ScrollParallaxL2MainRt
+levelB:
+	JMP ScrollColorGradientMainRt
+level63:
+	LDA #$01
+	JMP ScrollColorGradientMainRt
+
+;------------------------------------------------
+; HDMA background gradient that scrolls with the background
+;------------------------------------------------
+
+; *TODO*:
+; - standardize which blocks of RAM are used for which types of HDMA
+; - make the tables shorter by using continuous mode instead?
+
+; 0x1B1 scanlines * 2 = 0x362, * 3 = 0x513
+; color gradient: 0x514 + 0x363 bytes
+; brightness gradient: 0x363 bytes
+; parallax: 0x514 bytes
+; 1 color + 1 brightness + 2 parallax = 0x1602 or 0x1640 bytes
+; color gradient: $7F7770, $7F7C90 (or $7F7789, $7F7C9D)
+; parallax: $7F7250?
+; brightness gradient: $7F7090? or $7F7400?
+; or...
+; color: $7F7000, $7F7520
+; parallax: $7F7890
+; brightness: $7F7890
+; or...
+; color: $7F6F16, $7F7429
+; parallax: $7F778B
+; brightness: $7F7C9E
+; or...
+; $7F7250-$7F7FFF used for all of them
+; color $7F7250-776F, $7F7770-7A9F; parallax $7F7AE0-7FFF
+; color $7F7250-776F, $7F7770-7A9F; brightness $7F7AE0-7E4F
+; parallax $7F7250-776F; brightness $7F7770-7A9F or brightness $7F7250-$74BF; parallax $7F7AE0-7FFF
+; color $7F6D30-724F, $7F7250-754F; L2 parallax $7F75C0-7ADF; L3 parallax $7F7AE0-7FFF
+; brightness ; L2 parallax ; L3 parallax ; color $7F7770-7C8F, $7F7C90-7FFF
+; color $7F69C0, $7F6EE0; brightness $7F7250; L2 parallax $7F75C0; L3 parallax $7F7AE0 (note: $7F6ED4-DF, $7F7243-4F, $7F75B3-BF, $7F7AD4-DF, and $7F7FF4-FF will be unused)
+; color $7F69FE, $7F6F12; brightness $7F7275; L2 parallax $7F75D8; L3 parallax $7F7AEC
+; old addresses: B260 and B830
+; old addresses 2: 7250, 7770, 7AE0
+
+; put in levelinit
+; Input: HDMA pattern number
+ScrollColorGradientInitRt:
+; set up pointers:
+; ($02), ($04), ($06), and ($08) point to, respectively, the first, second, third, and fourth bytes corresponding to the scanline and color data for the current scanline group
+; [$0A] and [$0D] point to, respectively, the starting address of the HDMA data table and the starting address plus 0x514
+	REP #$30
+	AND #$00FF
+	ASL
+	TAX
+	LDA ScrollColorGradientTbl,x
+	STA $02
+	INC
+	STA $04
+	INC
+	STA $06
+	INC
+	STA $08
+	LDA.w #!ColorHDMAAddr
+	STA $0A
+	LDA.w #!ColorHDMAAddr+$0514
+	STA $0D
+	SEP #$20
+	LDA.b #!ColorHDMAAddr>>16
+	STA $0C
+	STA $0F
+.Loop1
+; if the scanline count is 0, it's the end of the HDMA data
+	LDA ($02)
+	BEQ .End
+	STA $00
+.Loop2
+; scanline counts are always 1
+	LDA #$01
+	STA [$0A]
+	STA [$0D]
+; store the color data: red and green into the first table, blue into the second
+	LDY #$0001
+	LDA ($04)
+	STA [$0A],y
+	LDA ($08)
+	STA [$0D],y
+	INY
+	LDA ($06)
+	STA [$0A],y
+	REP #$20
+	INC $0A
+	INC $0A
+	INC $0A
+	INC $0D
+	INC $0D
+	SEP #$20
+; repeat for as many scanlines are in this group
+	DEC $00
+	BNE .Loop2
+	REP #$20
+; add 4 to the pointers because there are 4 bytes per scanline group
+	LDA $02
+	CLC
+	ADC #$0004
+	STA $02
+	INC
+	STA $04
+	INC
+	STA $06
+	INC
+	STA $08
+	SEP #$20
+	BRA .Loop1
+.End
+	SEP #$30
+; this code should directly follow the above, and it should also be called in
+; the level main code - input should not be necessary
+ScrollColorGradientMainRt:
+	REP #$20
+; HDMA settings
+	LDA #$3202
+	STA $4330
+	LDA #$3200
+	STA $4340
+; set the starting point depending on the current Layer 2 position as well as the highest point it can go
+	LDA $1414
+	ASL
+	TAY
+	LDA $20
+	SEC
+	SBC TopL2YPos,y
+	STA $00
+	ASL
+	CLC
+	ADC $00
+	CLC
+	ADC.w #!ColorHDMAAddr
+	STA $4332
+	LDA $00
+	ASL
+	CLC
+	ADC.w #!ColorHDMAAddr+$0514
+	STA $4342
+	LDY.b #!ColorHDMAAddr>>16
+	STY $4334
+	STY $4344
+	SEP #$20
+	LDA #$18
+	TSB $0D9F
+	RTS
+
+;------------------------------------------------
+; parallax HDMA that scrolls with the background
+;------------------------------------------------
+
+; most of this is the same as the color gradient,
+; except that we don't need as many pointers
+ScrollParallaxL2InitRt:
+	REP #$30
+	AND #$00FF
+	ASL
+	TAX
+	LDA ScrollParallaxTblL2,x
+	STA $02
+	INC
+	STA $04
+	LDA.w #!ParallaxL2HDMAAddr
+	STA $0A
+	SEP #$20
+	LDA.b #!ParallaxL2HDMAAddr>>16
+	STA $0C
+.Loop1
+	LDA ($02)
+	BEQ .End
+	STA $00
+.Loop2
+	LDA #$01
+	STA [$0A]
+	LDY #$0001
+	REP #$20
+	LDA ($04)
+	AND #$00FF
+	ASL
+	CLC
+	ADC.w #!RAM_ParallaxRatesL2
+	STA [$0A],y
+	INC $0A
+	INC $0A
+	INC $0A
+	SEP #$20
+	DEC $00
+	BNE .Loop2
+	REP #$20
+	LDA $02
+	INC : INC
+	STA $02
+	INC
+	STA $04
+	SEP #$20
+	BRA .Loop1
+.End
+	SEP #$30
+; note here that before calling this in levelmain,
+; we must set !RAM_ParallaxRatesL2 to the proper value(s);
+; the RAM address uses twice as many bytes as there are scroll rates
+ScrollParallaxL2MainRt:
+	REP #$20
+	LDA #$0F42
+	STA $4350
+	LDA $1414
+	AND #$00FF
+	ASL
+	TAY
+	LDA $20
+	SEC
+	SBC TopL2YPos,y
+	STA $00
+	ASL
+	CLC
+	ADC $00
+	CLC
+	ADC.w #!ParallaxL2HDMAAddr
+	STA $4352
+	LDY.b #!ParallaxL2HDMAAddr>>16
+	STY $4354
+	STY $4357
+	SEP #$20
+	LDA #$20
+	TSB $0D9F
+	RTS
+
+; I haven't actually tried using parallax on Layer 3 yet...
+ScrollParallaxL3InitRt:
+	REP #$30
+	AND #$00FF
+	ASL
+	TAX
+	LDA ScrollParallaxTblL3,x
+	STA $02
+	INC
+	STA $04
+	LDA.w #!ParallaxL3HDMAAddr
+	STA $0A
+	SEP #$20
+	LDA.b #!ParallaxL3HDMAAddr>>16
+	STA $0C
+.Loop1
+	LDA ($02)
+	BEQ .End
+	STA $00
+.Loop2
+	LDA #$01
+	STA [$0A]
+	LDY #$0001
+	REP #$20
+	LDA ($04)
+	AND #$00FF
+	ASL
+	CLC
+	ADC.w #!RAM_ParallaxRatesL3
+	STA [$0A],y
+	INC $0A
+	INC $0A
+	INC $0A
+	SEP #$20
+	DEC $00
+	BNE .Loop2
+	REP #$20
+	LDA $02
+	INC : INC
+	STA $02
+	INC
+	STA $04
+	SEP #$20
+	BRA .Loop1
+.End
+	SEP #$30
+ScrollParallaxL3MainRt:
+	REP #$20
+	LDA #$1142
+	STA $4350
+; TODO: figure out just what values I actually need here (thanks to $145E, do I even need a table?)
+	LDA $145F
+	AND #$00F0
+	LSR : LSR : LSR
+	TAY
+	LDA $24
+	SEC
+;	SBC TopL3YPos,y
+	STA $00
+	ASL
+	CLC
+	ADC $00
+	CLC
+	ADC.w #!ParallaxL3HDMAAddr
+	STA $4352
+	LDY.b #!ParallaxL3HDMAAddr>>16
+	STY $4354
+	STY $4357
+	SEP #$20
+	LDA #$20
+	TSB $0D9F
+	RTS
+
+;------------------------------------------------
+; HDMA tables
+;------------------------------------------------
+
+; total scanline count: 0x1B1 - TopL2YPos or TopL3YPos
+
+TopL2YPos:
+	dw $00C0,$0000,$0060,$00A8
+;TopL3YPos:
+;	dw $00C0,$0000,$0060,$5555,$00A8,$5555,$5555,$5555
+;	dw $5555,$5555,$5555,$5555,$5555,$5555,$5555,$5555
+
+; pointers to color gradient data
+ScrollColorGradientTbl:
+	dw .00,.01,.02
+
+; scanline count, red value, green value, blue value
+.00
+	db $0C,$2D,$54,$9B
+	db $04,$2D,$55,$9B
+	db $12,$2E,$55,$9B
+	db $08,$2E,$56,$9B
+	db $0B,$2E,$56,$9C
+	db $02,$2F,$56,$9C
+	db $15,$2F,$57,$9C
+	db $0F,$2F,$58,$9C
+	db $07,$30,$58,$9C
+	db $11,$30,$59,$9C
+	db $04,$30,$59,$9D
+	db $09,$30,$5A,$9D
+	db $0D,$31,$5A,$9D
+	db $15,$31,$5B,$9D
+	db $04,$31,$5C,$9D
+	db $11,$32,$5C,$9D
+	db $04,$32,$5D,$9D
+	db $19,$32,$5D,$9E
+	db $04,$32,$5D,$9D
+	db $03,$32,$5C,$9D
+	db $0B,$31,$5C,$9D
+	db $05,$31,$5B,$9D
+	db $09,$30,$5B,$9D
+	db $06,$30,$5A,$9D
+	db $07,$2F,$5A,$9C
+	db $09,$2F,$59,$9C
+	db $05,$2E,$59,$9C
+	db $0A,$2E,$58,$9C
+	db $03,$2D,$58,$9C
+	db $04,$2D,$57,$9C
+	db $09,$2D,$57,$9B
+	db $01,$2C,$57,$9B
+	db $0E,$2C,$56,$9B
+	db $01,$2C,$55,$9B
+	db $0C,$2B,$55,$9B
+	db $03,$2B,$54,$9A
+	db $0B,$2A,$54,$9A
+	db $05,$2A,$53,$9A
+	db $08,$29,$53,$9A
+	db $07,$29,$52,$9A
+	db $04,$28,$52,$9A
+	db $03,$28,$52,$99
+	db $09,$28,$51,$99
+	db $05,$27,$51,$99
+	db $0A,$27,$50,$99
+	db $03,$26,$50,$99
+	db $08,$26,$4F,$99
+	db $05,$26,$4F,$98
+	db $01,$25,$4F,$98
+	db $0E,$25,$4E,$98
+	db $01,$25,$4D,$98
+	db $0A,$24,$4D,$98
+	db $00
+
+.01
+	db $33,$38,$5F,$9C
+	db $03,$38,$5E,$9C
+	db $03,$37,$5E,$9C
+	db $02,$37,$5E,$9B
+	db $04,$37,$5D,$9B
+	db $04,$36,$5D,$9B
+	db $04,$36,$5C,$9B
+	db $01,$36,$5C,$9A
+	db $04,$35,$5C,$9A
+	db $05,$35,$5B,$9A
+	db $03,$34,$5B,$9A
+	db $06,$34,$5A,$99
+	db $02,$33,$5A,$99
+	db $06,$33,$59,$99
+	db $01,$33,$59,$98
+	db $01,$32,$59,$98
+	db $08,$32,$58,$98
+	db $01,$31,$58,$98
+	db $03,$31,$57,$98
+	db $05,$31,$57,$97
+	db $08,$30,$56,$97
+	db $01,$30,$55,$96
+	db $08,$2F,$55,$96
+	db $01,$2F,$54,$96
+	db $04,$2E,$54,$96
+	db $03,$2E,$54,$95
+	db $02,$2E,$53,$95
+	db $06,$2D,$53,$95
+	db $02,$2D,$52,$95
+	db $01,$2D,$52,$94
+	db $05,$2C,$52,$94
+	db $04,$2C,$51,$94
+	db $80,$2B,$51,$94
+	db $80,$2B,$51,$94
+	db $0E,$2B,$51,$94
+	db $00
+
+.02
+	db $1A,$30,$57,$9D
+	db $05,$30,$57,$9E
+	db $03,$30,$58,$9E
+	db $08,$31,$58,$9E
+	db $03,$31,$59,$9E
+	db $07,$32,$59,$9E
+	db $04,$32,$5A,$9E
+	db $06,$33,$5A,$9E
+	db $06,$33,$5B,$9E
+	db $05,$34,$5B,$9E
+	db $06,$34,$5C,$9E
+	db $02,$35,$5C,$9E
+	db $02,$35,$5C,$9F
+	db $07,$35,$5D,$9F
+	db $03,$36,$5D,$9F
+	db $08,$36,$5E,$9F
+	db $02,$37,$5E,$9F
+	db $0E,$37,$5F,$9F
+	db $17,$38,$5F,$9F
+	db $16,$39,$5F,$9F
+	db $17,$3A,$5F,$9F
+	db $16,$3B,$5F,$9F
+	db $17,$3C,$5F,$9F
+	db $17,$3D,$5F,$9F
+	db $16,$3E,$5F,$9F
+	db $80,$3F,$5F,$9F
+	db $1D,$3F,$5F,$9F
+	db $00
+
+; pointers to parallax data
+ScrollParallaxTblL2:
+	dw .00
+
+; scanline count, index to scroll rate
+.00
+	db $80,$00
+	db $50,$00
+	db $80,$01
+	db $01,$01
+	db $00
+
+ScrollParallaxTblL3:
+	dw .00
+
+.00
+	db $00
+
+Back to top - AUP - DMCA/Abuse
+
+© 2012 - 2015 Paste.ee
